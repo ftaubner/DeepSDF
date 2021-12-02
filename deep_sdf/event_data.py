@@ -140,7 +140,7 @@ def process_dataset(dataset_path, processed_path):
         "std_y": compute_std(std_im_y_s, num_s)
     }
 
-    print("Mean f: {}, std f: {}".format(dataset_info["std_f"], dataset_info["std_f"]))
+    print("Mean f: {}, std f: {}".format(dataset_info["mean_f"], dataset_info["std_f"]))
     print("Mean t: {}, std t: {}".format(dataset_info["mean_t"], dataset_info["std_t"]))
     print("Mean pixel coord: {}|{}, std pixel coord: {}|{}".format(dataset_info["mean_x"],
                                                                    dataset_info["std_x"],
