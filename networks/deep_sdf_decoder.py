@@ -86,7 +86,7 @@ class Decoder(nn.Module):
             if layer in self.latent_in:
                 x = torch.cat([x, input], 1)
             elif layer != 0 and self.xyz_in_all:
-                x = torch.cat([x, xyz], 1)
+                x = torch.cat([x, xyz], 1)  # TODO: Change back to dim 1 for single forward pass
             x = lin(x)
             # last layer Tanh
             if layer == self.num_layers - 2 and self.use_tanh:

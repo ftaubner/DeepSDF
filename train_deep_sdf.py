@@ -14,6 +14,8 @@ import time
 import deep_sdf
 import deep_sdf.workspace as ws
 
+import deep_sdf.event_render as render
+
 
 class LearningRateSchedule:
     def get_learning_rate(self, epoch):
@@ -257,7 +259,6 @@ def main_function(experiment_directory, continue_from, batch_split):
     logging.info("Experiment description: \n" + specs["Description"])
 
     data_source = specs["DataSource"]
-    train_split_file = specs["TrainSplit"]
 
     arch = __import__("networks." + specs["NetworkArch"], fromlist=["Decoder"])
 
@@ -315,6 +316,7 @@ def main_function(experiment_directory, continue_from, batch_split):
     signal.signal(signal.SIGINT, signal_handler)
 
     num_samp_per_scene = specs["SamplesPerScene"]
+    num_samp_per_event = specs["SamplesPerEvent"]
     scene_per_batch = specs["ScenesPerBatch"]
     clamp_dist = specs["ClampingDistance"]
     minT = -clamp_dist
@@ -336,27 +338,25 @@ def main_function(experiment_directory, continue_from, batch_split):
     num_epochs = specs["NumEpochs"]
     log_frequency = get_spec_with_default(specs, "LogFrequency", 10)
 
-    with open(train_split_file, "r") as f:
-        train_split = json.load(f)
-
-    sdf_dataset = deep_sdf.data.SDFSamples(
-        data_source, train_split, num_samp_per_scene, load_ram=False
+    import deep_sdf.event_data
+    event_dataset = deep_sdf.event_data.EventData(
+        data_source, num_events_per_scene=num_samp_per_scene, num_samples_per_event=10
     )
 
     num_data_loader_threads = get_spec_with_default(specs, "DataLoaderThreads", 1)
     logging.debug("loading data with {} threads".format(num_data_loader_threads))
 
     sdf_loader = data_utils.DataLoader(
-        sdf_dataset,
+        event_dataset,
         batch_size=scene_per_batch,
         shuffle=True,
-        num_workers=num_data_loader_threads,
+        num_workers=0,
         drop_last=True,
     )
 
     logging.debug("torch num_threads: {}".format(torch.get_num_threads()))
 
-    num_scenes = len(sdf_dataset)
+    num_scenes = len(event_dataset)
 
     logging.info("There are {} scenes".format(num_scenes))
 
@@ -459,28 +459,32 @@ def main_function(experiment_directory, continue_from, batch_split):
 
         adjust_learning_rate(lr_schedules, optimizer_all, epoch)
 
-        for sdf_data, indices in sdf_loader:
+        for x_data, y_data, weights_data, class_names, indices in sdf_loader:
 
             # Process the input data
-            sdf_data = sdf_data.reshape(-1, 4)
+            # sdf_data = sdf_data.reshape(-1, 4)
+            x_data = torch.flatten(x_data, start_dim=0, end_dim=1)
+            y_data = y_data.reshape(-1, 1)
+            weights_data = weights_data.reshape(-1, 1)
 
-            num_sdf_samples = sdf_data.shape[0]
+            num_event_samples = x_data.shape[0]
 
-            sdf_data.requires_grad = False
+            x_data.requires_grad = False
 
-            xyz = sdf_data[:, 0:3]
-            sdf_gt = sdf_data[:, 3].unsqueeze(1)
+            xyt_samples = x_data
+            event_gt_integrals = y_data
 
-            if enforce_minmax:
-                sdf_gt = torch.clamp(sdf_gt, minT, maxT)
+            # print("lol")
+            # print(indices.unsqueeze(-1).repeat(1, num_samp_per_scene, num_samp_per_event).shape)
 
-            xyz = torch.chunk(xyz, batch_split)
+            xyz = torch.chunk(xyt_samples, batch_split)
             indices = torch.chunk(
-                indices.unsqueeze(-1).repeat(1, num_samp_per_scene).view(-1),
+                indices.unsqueeze(-1).repeat(1, num_samp_per_scene, num_samp_per_event).squeeze(0),
                 batch_split,
             )
+            weights = torch.chunk(weights_data, batch_split)
 
-            sdf_gt = torch.chunk(sdf_gt, batch_split)
+            integrals_gt = torch.chunk(event_gt_integrals, batch_split)
 
             batch_loss = 0.0
 
@@ -488,29 +492,52 @@ def main_function(experiment_directory, continue_from, batch_split):
 
             for i in range(batch_split):
 
+                # print("indices")
+                # print(indices.shape)
+                # print(indices[i].shape)
+
                 batch_vecs = lat_vecs(indices[i])
 
-                input = torch.cat([batch_vecs, xyz[i]], dim=1)
+                # print(xyz[i].shape)
+                # print(batch_vecs.shape)
+
+                input = torch.cat([batch_vecs, xyz[i]], dim=2)
+
+                previous_shape = input.shape
+                # input = input.reshape(input.shape[0] * input.shape[1], input.shape[2])
+                input = torch.flatten(input, start_dim=0, end_dim=1)
 
                 # NN optimization
-                pred_sdf = decoder(input)
+                pred_sample_points = decoder(input)
+                print(pred_sample_points.shape)
+                pred_sample_points = pred_sample_points.reshape(previous_shape[0], previous_shape[1], 1)
+                print(pred_sample_points.shape)
+                pred_integrals = torch.sum(pred_sample_points, dim=1)
+                print(pred_integrals.shape)
+                # print("output")
+                # print(pred_integrals.shape)
+                # print(integrals_gt[i].shape)
+                # print(weights[i].shape)
 
-                if enforce_minmax:
-                    pred_sdf = torch.clamp(pred_sdf, minT, maxT)
+                # if enforce_minmax:
+                #     pred_sdf = torch.clamp(pred_integrals, minT, maxT)
 
-                chunk_loss = loss_l1(pred_sdf, sdf_gt[i].cuda()) / num_sdf_samples
+                chunk_loss = torch.sum((pred_integrals - integrals_gt[i].cuda()) ** 2 * weights[i].cuda()) \
+                                / num_event_samples * 1000.0
 
                 if do_code_regularization:
                     l2_size_loss = torch.sum(torch.norm(batch_vecs, dim=1))
                     reg_loss = (
                         code_reg_lambda * min(1, epoch / 100) * l2_size_loss
-                    ) / num_sdf_samples
+                    ) / num_event_samples
 
                     chunk_loss = chunk_loss + reg_loss.cuda()
 
                 chunk_loss.backward()
 
                 batch_loss += chunk_loss.item()
+
+                # print("Completed batch split {}/{}".format(i + 1, batch_split))
 
             logging.debug("loss = {}".format(batch_loss))
 
@@ -548,6 +575,8 @@ def main_function(experiment_directory, continue_from, batch_split):
                 param_mag_log,
                 epoch,
             )
+
+        render.render_event_field(decoder, lat_vecs(torch.tensor(0)), (200, 200, 50), event_dataset.dataset_info)
 
 
 if __name__ == "__main__":

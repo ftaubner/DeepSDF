@@ -1,0 +1,6 @@
+results/
+deep_sdf/field_animation_0.gif
+networks/__pycache__
+deep_sdf/__pycache__
+deep_sdf/metrics/__pycache__
+.idea/

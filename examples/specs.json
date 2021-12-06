@@ -1,0 +1,39 @@
+{
+  "Description" : "This experiment learns a gradient function representation for event sequences using data from N-Caltech101.",
+  "DataSource" : "C:/Users/felix/Downloads/datasets/N_Caltech101/baby_dataset",
+  "NetworkArch" : "deep_event_decoder",
+  "NetworkSpecs" : {
+    "hidden_features" : 256,
+    "hidden_layers" : 6,
+    "out_features" : 1,
+    "outermost_linear" : true,
+    "first_omega_0" : 30.0,
+    "hidden_omega_0" : 30.0
+    },
+  "CodeLength" : 1,
+  "NumEpochs" : 2001,
+  "SnapshotFrequency" : 1000,
+  "AdditionalSnapshots" : [ 10, 50, 100, 500 ],
+  "LearningRateSchedule" : [
+    {
+      "Type" : "Step",
+      "Initial" : 0.5,
+      "Interval" : 50,
+      "Factor" : 0.5
+    },
+    {
+      "Type" : "Step",
+      "Initial" : 0.0001,
+      "Interval" : 50,
+      "Factor" : 0.5
+    }],
+  "SamplesPerScene" : 8000,
+  "SamplesPerEvent" : 10,
+  "ScenesPerBatch" : 1,
+  "DataLoaderThreads" : 0,
+  "ClampingDistance" : 0.1,
+  "CodeRegularization" : true,
+  "CodeRegularizationLambda" : 1e-4,
+  "CodeBound" : 1.0
+}
+
