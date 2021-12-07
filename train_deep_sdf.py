@@ -250,7 +250,7 @@ def append_parameter_magnitudes(param_mag_log, model):
         param_mag_log[name].append(param.data.norm().item())
 
 
-def main_function(experiment_directory, continue_from, batch_split):
+def main_function(experiment_directory, continue_from, batch_split, use_fields=True):
 
     logging.debug("running " + experiment_directory)
 
@@ -337,11 +337,18 @@ def main_function(experiment_directory, continue_from, batch_split):
 
     num_epochs = specs["NumEpochs"]
     log_frequency = get_spec_with_default(specs, "LogFrequency", 10)
+    render_freq = get_spec_with_default(specs, "RenderFrequency", 100)
 
-    import deep_sdf.event_data
-    event_dataset = deep_sdf.event_data.EventData(
-        data_source, num_events_per_scene=num_samp_per_scene, num_samples_per_event=10
-    )
+    if use_fields:
+        import deep_sdf.event_data
+        event_dataset = deep_sdf.event_data.EventDataFields(
+            data_source, num_events_per_scene=num_samp_per_scene
+        )
+    else:
+        import deep_sdf.event_data
+        event_dataset = deep_sdf.event_data.EventData(
+            data_source, num_events_per_scene=num_samp_per_scene, num_samples_per_event=10
+        )
 
     num_data_loader_threads = get_spec_with_default(specs, "DataLoaderThreads", 1)
     logging.debug("loading data with {} threads".format(num_data_loader_threads))
@@ -464,24 +471,31 @@ def main_function(experiment_directory, continue_from, batch_split):
             # Process the input data
             # sdf_data = sdf_data.reshape(-1, 4)
             x_data = torch.flatten(x_data, start_dim=0, end_dim=1)
-            y_data = y_data.reshape(-1, 1)
-            weights_data = weights_data.reshape(-1, 1)
+            y_data = torch.flatten(y_data, start_dim=0, end_dim=1)
+
+            if not use_fields:
+                weights_data = torch.flatten(weights_data, start_dim=0, end_dim=1)
 
             num_event_samples = x_data.shape[0]
 
             x_data.requires_grad = False
+            weights_data.requires_grad = False
+            y_data.requires_grad = False
 
             xyt_samples = x_data
             event_gt_integrals = y_data
 
-            # print("lol")
-            # print(indices.unsqueeze(-1).repeat(1, num_samp_per_scene, num_samp_per_event).shape)
-
             xyz = torch.chunk(xyt_samples, batch_split)
-            indices = torch.chunk(
-                indices.unsqueeze(-1).repeat(1, num_samp_per_scene, num_samp_per_event).squeeze(0),
-                batch_split,
-            )
+            if use_fields:
+                indices = torch.chunk(
+                    indices.unsqueeze(-1).repeat(1, num_samp_per_scene).reshape(-1, 1).squeeze(),
+                    batch_split,
+                )
+            else:
+                indices = torch.chunk(
+                    indices.unsqueeze(-1).repeat(1, num_samp_per_scene, num_samp_per_event).squeeze(0),
+                    batch_split,
+                )
             weights = torch.chunk(weights_data, batch_split)
 
             integrals_gt = torch.chunk(event_gt_integrals, batch_split)
@@ -491,39 +505,28 @@ def main_function(experiment_directory, continue_from, batch_split):
             optimizer_all.zero_grad()
 
             for i in range(batch_split):
-
-                # print("indices")
-                # print(indices.shape)
-                # print(indices[i].shape)
-
                 batch_vecs = lat_vecs(indices[i])
 
-                # print(xyz[i].shape)
-                # print(batch_vecs.shape)
+                if use_fields:
+                    input = torch.cat([batch_vecs, xyz[i]], dim=1)
+                else:
+                    input = torch.cat([batch_vecs, xyz[i]], dim=2)
 
-                input = torch.cat([batch_vecs, xyz[i]], dim=2)
+                if not use_fields:
+                    previous_shape = input.shape
+                    input = torch.flatten(input, start_dim=0, end_dim=1)
 
-                previous_shape = input.shape
-                # input = input.reshape(input.shape[0] * input.shape[1], input.shape[2])
-                input = torch.flatten(input, start_dim=0, end_dim=1)
+                    # NN optimization
+                    pred_sample_points = decoder(input)
+                    pred_sample_points = pred_sample_points.reshape(previous_shape[0], previous_shape[1], 1)
+                    pred_integrals = torch.sum(pred_sample_points, dim=1)
 
-                # NN optimization
-                pred_sample_points = decoder(input)
-                print(pred_sample_points.shape)
-                pred_sample_points = pred_sample_points.reshape(previous_shape[0], previous_shape[1], 1)
-                print(pred_sample_points.shape)
-                pred_integrals = torch.sum(pred_sample_points, dim=1)
-                print(pred_integrals.shape)
-                # print("output")
-                # print(pred_integrals.shape)
-                # print(integrals_gt[i].shape)
-                # print(weights[i].shape)
-
-                # if enforce_minmax:
-                #     pred_sdf = torch.clamp(pred_integrals, minT, maxT)
-
-                chunk_loss = torch.sum((pred_integrals - integrals_gt[i].cuda()) ** 2 * weights[i].cuda()) \
-                                / num_event_samples * 1000.0
+                    chunk_loss = torch.sum((pred_integrals - integrals_gt[i].cuda()) ** 2 * weights[i].cuda()) \
+                                    / num_event_samples
+                else:
+                    pred_sample_points = decoder(input)
+                    error = (pred_sample_points - integrals_gt[i].unsqueeze(-1).cuda())
+                    chunk_loss = torch.sum(error ** 2) / num_event_samples
 
                 if do_code_regularization:
                     l2_size_loss = torch.sum(torch.norm(batch_vecs, dim=1))
@@ -537,6 +540,7 @@ def main_function(experiment_directory, continue_from, batch_split):
 
                 batch_loss += chunk_loss.item()
 
+                print("Chunk loss: {}".format(chunk_loss.item()))
                 # print("Completed batch split {}/{}".format(i + 1, batch_split))
 
             logging.debug("loss = {}".format(batch_loss))
@@ -576,7 +580,9 @@ def main_function(experiment_directory, continue_from, batch_split):
                 epoch,
             )
 
-        render.render_event_field(decoder, lat_vecs(torch.tensor(0)), (200, 200, 50), event_dataset.dataset_info)
+        if epoch % render_freq == 0:
+            render.render_event_field(decoder, lat_vecs(torch.tensor(0)), (200, 200, 50),
+                                      event_dataset.dataset_info, experiment_directory, epoch=epoch, show=False)
 
 
 if __name__ == "__main__":

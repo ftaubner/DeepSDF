@@ -3,7 +3,7 @@
   "DataSource" : "C:/Users/felix/Downloads/datasets/N_Caltech101/baby_dataset",
   "NetworkArch" : "deep_event_decoder",
   "NetworkSpecs" : {
-    "hidden_features" : 256,
+    "hidden_features" : 300,
     "hidden_layers" : 6,
     "out_features" : 1,
     "outermost_linear" : true,

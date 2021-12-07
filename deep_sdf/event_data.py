@@ -224,7 +224,6 @@ def load_event_field(file_name, tixel=0.006, render=False):
     event_field = np.zeros((resolution[0], resolution[1], int(np.ceil(max_t / tixel))), dtype=np.single)
     buffer_im = np.zeros((resolution[0], resolution[1]), dtype=np.single)
 
-    event_sections = []
     y_s = []
     im_x_s = []
     im_y_s = []
@@ -253,8 +252,6 @@ def load_event_field(file_name, tixel=0.006, render=False):
                 # event_sections[index_im[x, y]][3] = t
                 # event_sections[index_im[x, y]][4] += p
             else:
-                # event_section = [x, y, buffer_im[x, y], t, p]
-                # event_sections.append(event_section)
                 t_0 = buffer_im[x, y]
                 f_avg = p / (t - t_0)
                 start_idx = int(np.floor(t_0 / tixel))
@@ -277,11 +274,10 @@ def load_event_field(file_name, tixel=0.006, render=False):
         for j in range(resolution[1]):
             if buffer_im[i, j] == 0.:
                 # Add zero events
-                event_section = [i, j, 0., max_t, 0.]
-
                 event_field[i, j, :] = 0
 
                 y_s.append(0.)
+                t_s.append(0.)
                 empty_num += 1
 
     if render:
@@ -311,10 +307,10 @@ def load_event_field(file_name, tixel=0.006, render=False):
 
     print("Number of discarded events due to overlap: {}/{}".format(num_discarded, events.shape[0]))
     print("Number of inactive pixels: {}/{}".format(empty_num, resolution[0] * resolution[1]))
-    print("Number of usable training data: {}".format(len(event_sections)))
+    print("Number of usable training data: {}".format(len(y_s)))
 
     return event_field, mean_y, std_y, mean_t, std_t, mean_im_x, \
-           std_im_x, mean_im_y, std_im_y, len(event_sections)
+           std_im_x, mean_im_y, std_im_y, len(y_s)
 
 
 def process_dataset_fields(dataset_path, processed_path, render=False):

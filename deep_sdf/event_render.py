@@ -6,7 +6,7 @@ import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 
-def render_event_field(decoder, lat_vec, resolution, dataset_info, show=False):
+def render_event_field(decoder, lat_vec, resolution, dataset_info, log_dir, epoch=0, show=False):
     std_t = dataset_info["std_t"]
     std_x = dataset_info["std_x"]
     std_y = dataset_info["std_y"]
@@ -41,7 +41,7 @@ def render_event_field(decoder, lat_vec, resolution, dataset_info, show=False):
 
     ani = animation.ArtistAnimation(fig, frames, interval=50, blit=True,
                                     repeat_delay=10)
-    ani.save(filename='results/output_{}.gif'.format(0))
+    ani.save(filename=os.path.join(log_dir, 'output_{}.gif'.format(epoch)))
 
     if show:
         plt.show()
