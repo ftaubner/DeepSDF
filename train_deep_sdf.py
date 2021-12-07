@@ -540,7 +540,7 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
 
                 batch_loss += chunk_loss.item()
 
-                print("Chunk loss: {}".format(chunk_loss.item()))
+                # print("Chunk loss: {}".format(chunk_loss.item()))
                 # print("Completed batch split {}/{}".format(i + 1, batch_split))
 
             logging.debug("loss = {}".format(batch_loss))
