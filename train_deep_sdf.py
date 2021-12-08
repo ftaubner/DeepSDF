@@ -370,7 +370,7 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
 
     logging.debug(decoder)
 
-    lat_vecs = torch.nn.Embedding(num_scenes, latent_size, max_norm=code_bound)
+    lat_vecs = torch.nn.Embedding(num_scenes, latent_size, max_norm=code_bound).cuda()
     torch.nn.init.normal_(
         lat_vecs.weight.data,
         0.0,
@@ -477,6 +477,7 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
         before_data_loading = time.time()
 
         for x_data, y_data, weights_data, class_names, indices in sdf_loader:
+            before_batch = time.time()
 
             data_loading_time += time.time() - before_data_loading
             before_data_processing = time.time()
@@ -500,6 +501,11 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
 
             xyz = torch.chunk(x_data, batch_split)
             if use_fields:
+                # batch_vecs_list = lat_vecs(indices)
+                # print(batch_vecs_list.shape)
+                # batch_vecs_list = batch_vecs_list.cuda()
+                # batch_vecs_list = batch_vecs_list.unsqueeze(1).repeat(1, num_samp_per_scene, 1).flatten(0, 1)
+                # batch_vecs_list = torch.chunk(batch_vecs_list, batch_split)
                 indices = torch.chunk(
                     indices.unsqueeze(-1).repeat(1, num_samp_per_scene).reshape(-1, 1).squeeze(),
                     batch_split,
@@ -510,7 +516,6 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
                     batch_split,
                 )
             weights = torch.chunk(weights_data, batch_split)
-
             integrals_gt = torch.chunk(y_data, batch_split)
 
             batch_loss = 0.0
@@ -518,10 +523,10 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
             optimizer_all.zero_grad()
 
             for i in range(batch_split):
-                batch_vecs = lat_vecs(indices[i])
+                batch_vecs = lat_vecs(indices[i].cuda())
 
                 if use_fields:
-                    input = torch.cat([batch_vecs, xyz[i]], dim=1)
+                    input = torch.cat([batch_vecs, xyz[i].cuda()], dim=1)
                 else:
                     input = torch.cat([batch_vecs, xyz[i]], dim=2)
 
@@ -572,6 +577,7 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
                           "".format(data_loading_time / total_time,
                                     data_processing_time / total_time,
                                     gpu_action_time / total_time))
+            logging.debug("Batch time: {}".format(time.time() - before_batch))
 
             loss_log.append(batch_loss)
 
