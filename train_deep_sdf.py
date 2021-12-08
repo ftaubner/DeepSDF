@@ -468,7 +468,16 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
 
         adjust_learning_rate(lr_schedules, optimizer_all, epoch)
 
+        data_loading_time = 0.0
+        data_processing_time = 0.0
+        gpu_action_time = 0.0
+
+        before_data_loading = time.time()
+
         for x_data, y_data, weights_data, class_names, indices in sdf_loader:
+
+            data_loading_time += time.time() - before_data_loading
+            before_data_processing = time.time()
 
             # Process the input data
             # sdf_data = sdf_data.reshape(-1, 4)
@@ -526,9 +535,14 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
                     chunk_loss = torch.sum((pred_integrals - integrals_gt[i].cuda()) ** 2 * weights[i].cuda()) \
                                     / num_event_samples
                 else:
+                    data_processing_time += time.time() - before_data_processing
+                    before_gpu_action = time.time()
+
                     pred_sample_points = decoder(input)
                     error = (pred_sample_points - integrals_gt[i].unsqueeze(-1).cuda())
                     chunk_loss = torch.sum(error ** 2) / num_event_samples
+
+                    gpu_action_time += time.time() - before_gpu_action
 
                 if do_code_regularization:
                     l2_size_loss = torch.sum(torch.norm(batch_vecs, dim=1))
@@ -538,16 +552,21 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
 
                     chunk_loss = chunk_loss + reg_loss.cuda()
 
+                before_gpu_action = time.time()
                 chunk_loss.backward()
+                gpu_action_time += time.time() - before_gpu_action
 
                 batch_loss += chunk_loss.item()
 
                 # print("Chunk loss: {}".format(chunk_loss.item()))
                 # print("Completed batch split {}/{}".format(i + 1, batch_split))
+                before_data_processing = time.time()
 
             current_batches += 1
             logging.debug("loss = {} ({}/{})".format(batch_loss, current_batches, num_batches))
-            torch.cuda.memory_summary()
+            logging.debug("Time spent loading data | processing data | gpu action: {:02f} | {:02f} | {:02f}"
+                          "".format(data_loading_time, data_processing_time, gpu_action_time))
+            print(torch.cuda.memory_summary())
 
             loss_log.append(batch_loss)
 
@@ -556,6 +575,8 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
                 torch.nn.utils.clip_grad_norm_(decoder.parameters(), grad_clip)
 
             optimizer_all.step()
+
+            before_data_loading = time.time()
 
         end = time.time()
 
