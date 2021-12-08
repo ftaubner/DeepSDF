@@ -573,11 +573,11 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
             current_batches += 1
             logging.debug("loss = {} ({}/{})".format(batch_loss, current_batches, num_batches))
             total_time = data_loading_time + data_processing_time + gpu_action_time
-            logging.debug("Time spent loading data | processing data | gpu action: {:02f} | {:02f} | {:02f}"
-                          "".format(data_loading_time / total_time,
-                                    data_processing_time / total_time,
-                                    gpu_action_time / total_time))
-            logging.debug("Batch time: {}".format(time.time() - before_batch))
+            # logging.debug("Time spent loading data | processing data | gpu action: {:02f} | {:02f} | {:02f}"
+            #               "".format(data_loading_time / total_time,
+            #                         data_processing_time / total_time,
+            #                         gpu_action_time / total_time))
+            # logging.debug("Batch time: {}".format(time.time() - before_batch))
 
             loss_log.append(batch_loss)
 
@@ -616,7 +616,7 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
             )
 
         if epoch % render_freq == 0:
-            render.render_event_field(decoder, lat_vecs(torch.tensor(0)), (200, 200, 50),
+            render.render_event_field(decoder, lat_vecs(torch.tensor(0).cuda()), (200, 200, 50),
                                       event_dataset.dataset_info, experiment_directory, epoch=epoch, show=False)
 
 

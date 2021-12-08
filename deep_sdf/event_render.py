@@ -26,10 +26,10 @@ def render_event_field(decoder, lat_vec, resolution, dataset_info, log_dir, epoc
     for i in range(resolution[2]):
         eval_data = torch.tensor(coords[:, :, i, :], dtype=torch.float32)
         eval_data = torch.flatten(eval_data, start_dim=0, end_dim=1)
-        eval_data = torch.cat([lat_vec.unsqueeze(0).repeat(eval_data.shape[0], 1), eval_data], dim=-1)
+        eval_data = torch.cat([lat_vec.unsqueeze(0).repeat(eval_data.shape[0], 1), eval_data.cuda()], dim=-1)
 
         with torch.no_grad():
-            net_output = decoder(eval_data.cuda())
+            net_output = decoder(eval_data)
 
         out_img[:, :, i] = np.array(net_output.reshape(resolution[0], resolution[1]).cpu())
 
