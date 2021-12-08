@@ -357,7 +357,7 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
         event_dataset,
         batch_size=scene_per_batch,
         shuffle=True,
-        num_workers=0,
+        num_workers=num_data_loader_threads,
         drop_last=True,
     )
 
@@ -461,6 +461,8 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
         start = time.time()
 
         logging.info("epoch {}...".format(epoch))
+        num_batches = len(sdf_loader)
+        current_batches = 0
 
         decoder.train()
 
@@ -543,7 +545,9 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
                 # print("Chunk loss: {}".format(chunk_loss.item()))
                 # print("Completed batch split {}/{}".format(i + 1, batch_split))
 
-            logging.debug("loss = {}".format(batch_loss))
+            current_batches += 1
+            logging.debug("loss = {} ({}/{})".format(batch_loss, current_batches, num_batches))
+            torch.cuda.memory_summary()
 
             loss_log.append(batch_loss)
 
