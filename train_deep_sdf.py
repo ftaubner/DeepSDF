@@ -358,6 +358,7 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
         batch_size=scene_per_batch,
         shuffle=True,
         num_workers=num_data_loader_threads,
+        pin_memory=True,
         drop_last=True,
     )
 
@@ -383,6 +384,7 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
     )
 
     loss_l1 = torch.nn.L1Loss(reduction="sum")
+    loss_l2 = torch.nn.MSELoss(reduction="sum")
 
     optimizer_all = torch.optim.Adam(
         [
@@ -479,6 +481,10 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
             data_loading_time += time.time() - before_data_loading
             before_data_processing = time.time()
 
+            x_data.requires_grad = False
+            weights_data.requires_grad = False
+            y_data.requires_grad = False
+
             # Process the input data
             # sdf_data = sdf_data.reshape(-1, 4)
             x_data = torch.flatten(x_data, start_dim=0, end_dim=1)
@@ -489,14 +495,10 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
 
             num_event_samples = x_data.shape[0]
 
-            x_data.requires_grad = False
-            weights_data.requires_grad = False
-            y_data.requires_grad = False
+            # xyt_samples = x_data
+            # event_gt_integrals = y_data
 
-            xyt_samples = x_data
-            event_gt_integrals = y_data
-
-            xyz = torch.chunk(xyt_samples, batch_split)
+            xyz = torch.chunk(x_data, batch_split)
             if use_fields:
                 indices = torch.chunk(
                     indices.unsqueeze(-1).repeat(1, num_samp_per_scene).reshape(-1, 1).squeeze(),
@@ -509,7 +511,7 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
                 )
             weights = torch.chunk(weights_data, batch_split)
 
-            integrals_gt = torch.chunk(event_gt_integrals, batch_split)
+            integrals_gt = torch.chunk(y_data, batch_split)
 
             batch_loss = 0.0
 
@@ -539,8 +541,9 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
                     before_gpu_action = time.time()
 
                     pred_sample_points = decoder(input)
-                    error = (pred_sample_points - integrals_gt[i].unsqueeze(-1).cuda())
-                    chunk_loss = torch.sum(error ** 2) / num_event_samples
+                    # error = (pred_sample_points - integrals_gt[i].unsqueeze(-1).cuda())
+                    # chunk_loss = torch.sum(error ** 2) / num_event_samples
+                    chunk_loss = loss_l2(pred_sample_points, integrals_gt[i].unsqueeze(-1).cuda()) / num_event_samples
 
                     gpu_action_time += time.time() - before_gpu_action
 
@@ -564,9 +567,11 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
 
             current_batches += 1
             logging.debug("loss = {} ({}/{})".format(batch_loss, current_batches, num_batches))
+            total_time = data_loading_time + data_processing_time + gpu_action_time
             logging.debug("Time spent loading data | processing data | gpu action: {:02f} | {:02f} | {:02f}"
-                          "".format(data_loading_time, data_processing_time, gpu_action_time))
-            print(torch.cuda.memory_summary())
+                          "".format(data_loading_time / total_time,
+                                    data_processing_time / total_time,
+                                    gpu_action_time / total_time))
 
             loss_log.append(batch_loss)
 
@@ -575,7 +580,6 @@ def main_function(experiment_directory, continue_from, batch_split, use_fields=T
                 torch.nn.utils.clip_grad_norm_(decoder.parameters(), grad_clip)
 
             optimizer_all.step()
-
             before_data_loading = time.time()
 
         end = time.time()

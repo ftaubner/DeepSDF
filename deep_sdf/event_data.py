@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 from torch.utils.data import Dataset
 import os
@@ -400,11 +402,14 @@ class EventDataFields(Dataset):
         if idx > self.length:
             raise IndexError
 
+        # before = time.time()
+
         path_to_file = self.path_list[idx]
         class_name = self.class_names[idx]
 
         event_data = np.load(path_to_file)
         event_data = np.array(event_data, dtype=np.single)
+        # print("Data proc time: {}".format(time.time() - before))
         max_x = event_data.shape[0]
         max_y = event_data.shape[1]
         max_t = event_data.shape[2]
@@ -426,6 +431,7 @@ class EventDataFields(Dataset):
 
         y_output = np.array(data_y, dtype=np.single)
         x_output = np.array(samples, dtype=np.single)
+
 
         return x_output, y_output, 0, class_name, idx
 
