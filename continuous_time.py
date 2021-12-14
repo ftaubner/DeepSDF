@@ -186,9 +186,9 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
                          image_resolution=resolution,
                          out_time_resolution=16,
                          num_classes=101)
-    tixel_net = torch.nn.DataParallel(tixel_net)
-    print(tixel_net)
     tixel_net.cuda()
+    tixel_net = torch.nn.DataParallel(tixel_net)
+    # print(tixel_net)
 
     epochs = 1000
 
