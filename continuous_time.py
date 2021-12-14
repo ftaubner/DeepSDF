@@ -210,6 +210,11 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
             polarity_data = torch.unsqueeze(polarity_data, dim=-1)
             px_indices = px_indices.type(torch.int64)
             mask = torch.unsqueeze(mask, dim=-1)
+
+            time_data.requires_grad = False
+            polarity_data.requires_grad = False
+            px_indices.requires_grad = False
+            mask.requires_grad = False
             # px_indices = torch.unsqueeze(px_indices, dim=-1)
 
             out_field = tixel_net(time_data.cuda(), polarity_data.cuda(), px_indices.cuda(), mask.cuda())
