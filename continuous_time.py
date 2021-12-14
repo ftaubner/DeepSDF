@@ -164,7 +164,7 @@ def cross_entropy_loss_and_accuracy(prediction, target):
     return loss, accuracy
 
 
-def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-4):
+def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-4, num_workers=0):
     np.random.seed(777)
     # path_to_fields = r"C:\Users\felix\Downloads\datasets\N_Caltech101\testing_fields"
     # path_to_events = r"C:\Users\felix\Downloads\datasets\N_Caltech101\training"
@@ -179,7 +179,7 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
     dataloader = DataLoader(event_video, batch_size=batch_size, num_workers=0, shuffle=True)
 
     val_video = event_data_tixel.EventDataTixels(resolution, val_path, "", shuffle=False)
-    dataloader_val = DataLoader(val_video, batch_size=batch_size, num_workers=0, shuffle=False)
+    dataloader_val = DataLoader(val_video, batch_size=batch_size, num_workers=num_workers, shuffle=False)
 
     tixel_net = TixelNet(positional_exponentials=[0, 1, 2, 3, 4],
                          num_hidden_time_features=16,
@@ -192,7 +192,7 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
 
     epochs = 1000
 
-    optim = torch.optim.Adam(lr=1e-4, params=tixel_net.parameters())
+    optim = torch.optim.Adam(lr=init_lr, params=tixel_net.parameters())
 
     scheduler = torch.optim.lr_scheduler.StepLR(optim, 50, gamma=0.5)
 
@@ -246,7 +246,8 @@ if __name__ == '__main__':
     parser.add_argument("val_dataset", help="The directory of the validation data")
     parser.add_argument("--log_dir", help="The directory for the log_data", default="logs")
     parser.add_argument("--batch_size", help="Batch size", type=int, default=10)
+    parser.add_argument("--num_workers", help="Number of data loader threads", type=int, default=0)
     parser.add_argument("--init_lr", help="Initial learning rate", type=float, default=0.0001)
     args = parser.parse_args()
 
-    train_tixel(args.train_dataset, args.val_dataset, args.batch_size, args.log_dir, args.init_lr)
+    train_tixel(args.train_dataset, args.val_dataset, args.batch_size, args.log_dir, args.init_lr, args.num_workers)
