@@ -6,7 +6,7 @@ import json
 
 class EventDataTixels(Dataset):
     def __init__(self, resolution, path_to_events, path_to_fields,
-                 time_frame=0.06, max_num_events=100000, shuffle=False):
+                 time_frame=0.06, max_num_events=100000, shuffle=False, load_ram=False):
         self.resolution = resolution
         self.time_frame = time_frame
         # with open(os.path.join(path_to_fields, "dataset_info.json"), "r") as f:
@@ -16,6 +16,12 @@ class EventDataTixels(Dataset):
             self.get_paths_and_classes(path_to_events, path_to_fields)
         self.length = len(self.event_path_list)
         self.shuffle = shuffle
+
+        self.load_ram = load_ram
+        if load_ram:
+            self.ram_event_list = self.load_to_ram(self.event_path_list)
+
+        print("Done loading dataset from {}".format(path_to_events))
 
     def get_paths_and_classes(self, events_path, fields_path):
         event_path_list = []
@@ -32,6 +38,9 @@ class EventDataTixels(Dataset):
 
         return event_path_list, fields_path_list, class_names, classes
 
+    def load_to_ram(self, event_path_list):
+        return [np.load(path).astype(np.float32) for path in event_path_list]
+
     def __len__(self):
         return self.length
 
@@ -39,7 +48,6 @@ class EventDataTixels(Dataset):
         if idx > self.length:
             raise IndexError
 
-        path_to_event_file = self.event_path_list[idx]
         # path_to_field_file = self.field_path_list[idx]
         class_name = self.class_names[idx]
         class_id = self.classes.index(class_name)
@@ -56,8 +64,13 @@ class EventDataTixels(Dataset):
         # if max_y <= self.resolution[0]:
         #     field_data = field_data[:, :self.resolution[0], :]
 
-        event_data = np.load(path_to_event_file)
-        event_data = np.array(event_data, dtype=np.single)
+        if self.load_ram:
+            event_data = self.ram_event_list[idx]
+        else:
+            path_to_event_file = self.event_path_list[idx]
+            event_data = np.load(path_to_event_file)
+            event_data = np.array(event_data, dtype=np.single)
+
         max_t = np.max(event_data[:, 2])
         if self.shuffle:
             start_time = np.random.uniform(0., max_t - self.time_frame)

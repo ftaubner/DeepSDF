@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 from torchvision.models.resnet import resnet34
 
 import matplotlib.animation as animation
+import tqdm
 
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
@@ -137,7 +138,7 @@ def validate_nn(tixel_net, dataloader, writer, epoch):
     epoch_accuracy = 0.0
     num_batches = 0
 
-    for time_data, polarity_data, px_indices, mask, gt_field, class_ids, idx in dataloader:
+    for time_data, polarity_data, px_indices, mask, gt_field, class_ids, idx in tqdm.tqdm(dataloader):
         time_data = torch.unsqueeze(time_data, dim=-1)
         polarity_data = torch.unsqueeze(polarity_data, dim=-1)
         px_indices = px_indices.type(torch.int64)
@@ -164,7 +165,8 @@ def cross_entropy_loss_and_accuracy(prediction, target):
     return loss, accuracy
 
 
-def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-4, num_workers=0):
+def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-4, num_workers=0,
+                load_ram=False):
     np.random.seed(777)
     # path_to_fields = r"C:\Users\felix\Downloads\datasets\N_Caltech101\testing_fields"
     # path_to_events = r"C:\Users\felix\Downloads\datasets\N_Caltech101\training"
@@ -175,10 +177,10 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
     writer = SummaryWriter(os.path.join(log_dir, "tb"))
 
     import event_data_tixel
-    event_video = event_data_tixel.EventDataTixels(resolution, train_path, "", shuffle=True)
+    event_video = event_data_tixel.EventDataTixels(resolution, train_path, "", shuffle=True, load_ram=load_ram)
     dataloader = DataLoader(event_video, batch_size=batch_size, num_workers=0, shuffle=True)
 
-    val_video = event_data_tixel.EventDataTixels(resolution, val_path, "", shuffle=False)
+    val_video = event_data_tixel.EventDataTixels(resolution, val_path, "", shuffle=False, load_ram=load_ram)
     dataloader_val = DataLoader(val_video, batch_size=batch_size, num_workers=num_workers, shuffle=False)
 
     tixel_net = TixelNet(positional_exponentials=[0, 1, 2, 3, 4],
@@ -203,7 +205,7 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
         epoch_accuracy = 0.0
         num_batches = 0
 
-        for time_data, polarity_data, px_indices, mask, gt_field, class_ids, idx in dataloader:
+        for time_data, polarity_data, px_indices, mask, gt_field, class_ids, idx in tqdm.tqdm(dataloader):
             optim.zero_grad()
 
             time_data = torch.unsqueeze(time_data, dim=-1)
@@ -253,6 +255,8 @@ if __name__ == '__main__':
     parser.add_argument("--batch_size", help="Batch size", type=int, default=10)
     parser.add_argument("--num_workers", help="Number of data loader threads", type=int, default=0)
     parser.add_argument("--init_lr", help="Initial learning rate", type=float, default=0.0001)
+    parser.add_argument("--load_ram", help="Initial learning rate", type=bool, default=False)
     args = parser.parse_args()
 
-    train_tixel(args.train_dataset, args.val_dataset, args.batch_size, args.log_dir, args.init_lr, args.num_workers)
+    train_tixel(args.train_dataset, args.val_dataset, args.batch_size, args.log_dir, args.init_lr, args.num_workers,
+                args.load_ram)
