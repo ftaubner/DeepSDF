@@ -187,6 +187,7 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
                          out_time_resolution=16,
                          num_classes=101)
     tixel_net = torch.nn.DataParallel(tixel_net)
+    print(tixel_net)
     tixel_net.cuda()
 
     epochs = 1000
@@ -196,6 +197,8 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
     scheduler = torch.optim.lr_scheduler.StepLR(optim, 50, gamma=0.5)
 
     for epoch in range(epochs):
+        print("Begin epoch {}".format(epoch))
+
         epoch_loss = 0.0
         epoch_accuracy = 0.0
         num_batches = 0
