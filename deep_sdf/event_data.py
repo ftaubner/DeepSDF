@@ -432,7 +432,6 @@ class EventDataFields(Dataset):
         y_output = np.array(data_y, dtype=np.single)
         x_output = np.array(samples, dtype=np.single)
 
-
         return x_output, y_output, 0, class_name, idx
 
 
