@@ -15,6 +15,8 @@ class EventDataTixels(Dataset):
         self.event_path_list, self.field_path_list, self.class_names, self.classes = \
             self.get_paths_and_classes(path_to_events, path_to_fields)
         self.length = len(self.event_path_list)
+        if not shuffle:
+            self.length = self.length * 5
         self.shuffle = shuffle
 
         self.load_ram = load_ram
@@ -48,6 +50,11 @@ class EventDataTixels(Dataset):
         if idx > self.length:
             raise IndexError
 
+        if not self.shuffle:
+            idx_before = idx
+            idx = int(idx / 5)
+            idx_step = idx_before - idx
+
         # path_to_field_file = self.field_path_list[idx]
         class_name = self.class_names[idx]
         class_id = self.classes.index(class_name)
@@ -75,7 +82,7 @@ class EventDataTixels(Dataset):
         if self.shuffle:
             start_time = np.random.uniform(0., max_t - self.time_frame)
         else:
-            start_time = 0.
+            start_time = 0. + self.time_frame * idx_step
         event_data = event_data[np.where(np.logical_and(start_time < event_data[:, 2],
                                                         event_data[:, 2] < start_time + self.time_frame))[0], :]
         event_data = event_data[np.where(event_data[:, 0] < self.resolution[1])[0], :]

@@ -50,10 +50,11 @@ class TixelNet(nn.Module):
             nn.Linear(hidden_features, num_hidden_time_features)
         )
         self.convolutions = nn.Sequential(
-            nn.Conv2d(num_hidden_time_features, out_time_resolution, kernel_size=(3, 3), padding=(1, 1)),
-            nn.ReLU()
+            # nn.Conv2d(num_hidden_time_features, out_time_resolution, kernel_size=(3, 3), padding=(1, 1)),
+            # nn.BatchNorm2d(out_time_resolution),
+            # nn.ReLU()
         )
-        self.classifier = Classifier(out_time_resolution, num_classes)
+        self.classifier = Classifier(num_hidden_time_features, num_classes)
 
     def forward(self, times, polarities, pixel_indices, mask):
         batch_size = times.shape[0]
@@ -65,9 +66,14 @@ class TixelNet(nn.Module):
         pos_encoding = torch.cat([pos_encoding, polarities], dim=-1)
         event_wise_features = self.event_wise_linear(pos_encoding)
         pixel_feature_view = torch.flatten(pixel_features, start_dim=1, end_dim=2)
-        pixel_feature_view[:, pixel_indices] += event_wise_features * mask
+        # print("Shape")
+        # print(pixel_feature_view.shape)
+        batch_indices = torch.arange(0, batch_size, dtype=torch.int64, device='cuda')
+        batch_indices = batch_indices.repeat((pixel_indices.shape[-1], 1)).permute((1, 0))
+        # print(batch_indices.shape)
+        pixel_feature_view[batch_indices, pixel_indices] += event_wise_features * mask
         pixel_features = pixel_features.permute((0, 3, 1, 2))
-        pixel_features = self.convolutions(pixel_features)
+        # pixel_features = self.convolutions(pixel_features)
 
         classification = self.classifier(pixel_features)
         return classification
@@ -148,24 +154,35 @@ def validate(tixel_net, val_loader):
 def validate_nn(tixel_net, dataloader, writer, epoch):
     epoch_loss = 0.0
     epoch_accuracy = 0.0
+
+    single_loss = 0.0
+    single_acc = 0.0
+
     num_batches = 0
 
     for time_data, polarity_data, px_indices, mask, gt_field, class_ids, idx in tqdm.tqdm(dataloader):
         time_data = torch.unsqueeze(time_data, dim=-1)
         polarity_data = torch.unsqueeze(polarity_data, dim=-1)
         px_indices = px_indices.type(torch.int64)
+        # print(px_indices.shape)
         mask = torch.unsqueeze(mask, dim=-1)
 
         with torch.no_grad():
             out_field = tixel_net(time_data.cuda(), polarity_data.cuda(), px_indices.cuda(), mask.cuda())
-
-            error, acc = cross_entropy_loss_and_accuracy(out_field, class_ids.cuda())
+            result = torch.mean(out_field, dim=0)
+            error, acc = cross_entropy_loss_and_accuracy(result.unsqueeze(0), class_ids[0].unsqueeze(-1).cuda())
+            s_error, s_acc = cross_entropy_loss_and_accuracy(out_field[0, :].unsqueeze(0),
+                                                             class_ids[0].unsqueeze(-1).cuda())
 
         epoch_loss += error.item()
         epoch_accuracy += acc.item()
+
+        single_loss += s_error.item()
+        single_acc += s_acc.item()
         num_batches += 1
 
     print("Validation Loss: {} | Accuracy: {}".format(epoch_loss / num_batches, epoch_accuracy / num_batches))
+    print("Validation Single Loss: {} | Accuracy: {}".format(single_loss / num_batches, single_acc / num_batches))
     writer.add_scalar("validation/accuracy", epoch_accuracy / num_batches, epoch)
     writer.add_scalar("validation/loss", epoch_loss / num_batches, epoch)
 
@@ -190,10 +207,10 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
 
     import event_data_tixel
     event_video = event_data_tixel.EventDataTixels(resolution, train_path, "", shuffle=True, load_ram=load_ram)
-    dataloader = DataLoader(event_video, batch_size=batch_size, num_workers=0, shuffle=True)
+    dataloader = DataLoader(event_video, batch_size=batch_size, num_workers=num_workers, shuffle=True)
 
     val_video = event_data_tixel.EventDataTixels(resolution, val_path, "", shuffle=False, load_ram=load_ram)
-    dataloader_val = DataLoader(val_video, batch_size=batch_size, num_workers=num_workers, shuffle=False)
+    dataloader_val = DataLoader(val_video, batch_size=5, num_workers=num_workers, shuffle=False)
 
     tixel_net = TixelNet(positional_exponentials=[0, 1, 2, 3, 4],
                          num_hidden_time_features=8,
@@ -207,7 +224,7 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
 
     epochs = 1000
 
-    unfreeze_epoch = 2
+    unfreeze_epoch = 1
 
     optim = torch.optim.Adam(lr=init_lr, params=tixel_net.parameters())
 
@@ -219,6 +236,8 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
         epoch_loss = 0.0
         epoch_accuracy = 0.0
         num_batches = 0
+
+        # validate_nn(tixel_net, dataloader_val, writer, epoch)
 
         for time_data, polarity_data, px_indices, mask, gt_field, class_ids, idx in tqdm.tqdm(dataloader):
             optim.zero_grad()
