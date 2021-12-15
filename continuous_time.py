@@ -37,15 +37,17 @@ class TixelNet(nn.Module):
     def __init__(self, positional_exponentials, num_hidden_time_features, image_resolution,
                  out_time_resolution, num_classes):
         super().__init__()
-        # hidden_features = 128
+        hidden_features = 32
 
         self.image_resolution = image_resolution
         self.num_hidden_time_features = num_hidden_time_features
         self.positional_encoding = PositionalEncoding(positional_exponentials)
         self.event_wise_linear = nn.Sequential(
-            nn.Linear(len(positional_exponentials) + 2, num_hidden_time_features * 2),
+            nn.Linear(len(positional_exponentials) + 2, hidden_features),
             nn.ReLU(),
-            nn.Linear(num_hidden_time_features * 2, num_hidden_time_features)
+            nn.Linear(hidden_features, hidden_features),
+            nn.ReLU(),
+            nn.Linear(hidden_features, num_hidden_time_features)
         )
         self.convolutions = nn.Sequential(
             nn.Conv2d(num_hidden_time_features, out_time_resolution, kernel_size=(3, 3), padding=(1, 1)),
@@ -63,15 +65,15 @@ class TixelNet(nn.Module):
         pos_encoding = torch.cat([pos_encoding, polarities], dim=-1)
         event_wise_features = self.event_wise_linear(pos_encoding)
         pixel_feature_view = torch.flatten(pixel_features, start_dim=1, end_dim=2)
-        # print("yo")
-        # print(event_wise_features.shape)
-        # print(mask.shape)
         pixel_feature_view[:, pixel_indices] += event_wise_features * mask
         pixel_features = pixel_features.permute((0, 3, 1, 2))
         pixel_features = self.convolutions(pixel_features)
 
         classification = self.classifier(pixel_features)
         return classification
+
+    def unfreeze_resnet(self):
+        self.classifier.unfreeze_resnet()
 
 
 class Classifier(nn.Module):
@@ -80,8 +82,18 @@ class Classifier(nn.Module):
 
         self.classifier = resnet34(pretrained=True)
         self.crop_dimensions = crop_dimensions
+
+        for child in self.classifier.children():
+            for param in child.parameters():
+                param.requires_grad = False
+
         self.classifier.conv1 = nn.Conv2d(num_in_features, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.classifier.fc = nn.Linear(self.classifier.fc.in_features, num_classes)
+
+    def unfreeze_resnet(self):
+        for child in self.classifier.children():
+            for param in child.parameters():
+                param.requires_grad = True
 
     def crop_and_resize_to_resolution(self, x):
         B, C, H, W = x.shape
@@ -184,15 +196,18 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
     dataloader_val = DataLoader(val_video, batch_size=batch_size, num_workers=num_workers, shuffle=False)
 
     tixel_net = TixelNet(positional_exponentials=[0, 1, 2, 3, 4],
-                         num_hidden_time_features=16,
+                         num_hidden_time_features=8,
                          image_resolution=resolution,
                          out_time_resolution=16,
                          num_classes=101)
     tixel_net.cuda()
+    tixel_net_original = tixel_net
     tixel_net = torch.nn.DataParallel(tixel_net)
     # print(tixel_net)
 
     epochs = 1000
+
+    unfreeze_epoch = 2
 
     optim = torch.optim.Adam(lr=init_lr, params=tixel_net.parameters())
 
@@ -245,6 +260,9 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
         validate_nn(tixel_net, dataloader_val, writer, epoch)
 
         scheduler.step()
+
+        if epoch == unfreeze_epoch:
+            tixel_net_original.unfreeze_resnet()
 
 
 if __name__ == '__main__':

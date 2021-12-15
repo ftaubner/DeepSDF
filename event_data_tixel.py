@@ -81,7 +81,7 @@ class EventDataTixels(Dataset):
         event_data = event_data[np.where(event_data[:, 0] < self.resolution[1])[0], :]
         event_data = event_data[np.where(event_data[:, 1] < self.resolution[0])[0], :]
         indices = np.rint(event_data[:, 1]) * self.resolution[0] + np.rint(event_data[:, 0])
-        time_data = event_data[:, 2] / self.time_frame
+        time_data = event_data[:, 2] / self.time_frame - 0.5
         polarity_data = event_data[:, 3]
 
         indices = np.array(indices, dtype=np.long)
