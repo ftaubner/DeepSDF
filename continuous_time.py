@@ -177,6 +177,8 @@ def validate_nn(tixel_net, dataloader, writer, epoch):
 
     num_batches = 0
 
+    tixel_net.eval()
+
     for time_data, polarity_data, px_indices, mask, gt_field, class_ids, idx in tqdm.tqdm(dataloader):
         time_data = torch.unsqueeze(time_data, dim=-1)
         polarity_data = torch.unsqueeze(polarity_data, dim=-1)
@@ -232,7 +234,7 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
 
     val_video = event_data_tixel.EventDataTixels(resolution, val_path, "", shuffle=False, load_ram=load_ram,
                                                  time_frame=0.3, classes=event_video.classes)
-    dataloader_val = DataLoader(val_video, batch_size=batch_size, num_workers=num_workers, shuffle=True)
+    dataloader_val = DataLoader(val_video, batch_size=batch_size, num_workers=num_workers, shuffle=False)
 
     # for _ in tqdm.tqdm(dataloader_val):
     #     ...
@@ -280,6 +282,7 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
         num_batches = 0
 
         # validate_nn(tixel_net, dataloader_val, writer, epoch)
+        tixel_net.train()
 
         for time_data, polarity_data, px_indices, mask, gt_field, class_ids, idx in tqdm.tqdm(dataloader):
             optim.zero_grad()
