@@ -4,9 +4,31 @@ import os
 import json
 
 
+def random_shift_events(events, max_shift=20, resolution=(180, 240)):
+    """randomly perturbs the events on xy plane with max-shift of 20 pixels"""
+    H, W = resolution
+    x_shift, y_shift = np.random.randint(-max_shift, max_shift+1, size=(2,))
+    events[:,0] += x_shift
+    events[:,1] += y_shift
+
+    valid_events = (events[:,0] >= 0) & (events[:,0] < W) & (events[:,1] >= 0) & (events[:,1] < H)
+    events = events[valid_events]
+
+    return events
+
+
+def random_flip_events_along_x(events, resolution=(180, 240), p=0.5):
+    """flips the events on x-axis"""
+    H, W = resolution
+    if np.random.random() < p:
+        events[:,0] = W - 1 - events[:,0]
+    return events
+
+
 class EventDataTixels(Dataset):
     def __init__(self, resolution, path_to_events, path_to_fields,
-                 time_frame=0.06, max_num_events=100000, shuffle=False, load_ram=False):
+                 time_frame=0.06, max_num_events=200000, shuffle=False, load_ram=False,
+                 classes=None, augmentation=False):
         self.resolution = resolution
         self.time_frame = time_frame
         # with open(os.path.join(path_to_fields, "dataset_info.json"), "r") as f:
@@ -15,9 +37,12 @@ class EventDataTixels(Dataset):
         self.event_path_list, self.field_path_list, self.class_names, self.classes = \
             self.get_paths_and_classes(path_to_events, path_to_fields)
         self.length = len(self.event_path_list)
-        if not shuffle:
-            self.length = self.length * 5
+        # if not shuffle:
+        #     self.length = self.length * 5
         self.shuffle = shuffle
+        self.augmentation = augmentation
+        self.times = []
+        self.num_events = []
 
         self.load_ram = load_ram
         if load_ram:
@@ -50,10 +75,10 @@ class EventDataTixels(Dataset):
         if idx > self.length:
             raise IndexError
 
-        if not self.shuffle:
-            idx_before = idx
-            idx = int(idx / 5)
-            idx_step = idx_before - idx
+        # if not self.shuffle:
+        #     idx_before = idx
+        #     idx = int(idx / 5)
+        #     idx_step = idx_before % 5
 
         # path_to_field_file = self.field_path_list[idx]
         class_name = self.class_names[idx]
@@ -78,11 +103,21 @@ class EventDataTixels(Dataset):
             event_data = np.load(path_to_event_file)
             event_data = np.array(event_data, dtype=np.single)
 
+        if self.augmentation:
+            event_data = random_shift_events(event_data)
+            event_data = random_flip_events_along_x(event_data)
+
         max_t = np.max(event_data[:, 2])
+        self.times.append(max_t)
+        self.num_events.append(event_data.shape[0])
+
         if self.shuffle:
             start_time = np.random.uniform(0., max_t - self.time_frame)
         else:
-            start_time = 0. + self.time_frame * idx_step
+            start_time = 0.
+            # print(idx)
+            # print(idx_step)
+            # print(class_id)
         event_data = event_data[np.where(np.logical_and(start_time < event_data[:, 2],
                                                         event_data[:, 2] < start_time + self.time_frame))[0], :]
         event_data = event_data[np.where(event_data[:, 0] < self.resolution[1])[0], :]

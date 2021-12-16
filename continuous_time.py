@@ -70,12 +70,29 @@ class TixelNet(nn.Module):
         # print(pixel_feature_view.shape)
         batch_indices = torch.arange(0, batch_size, dtype=torch.int64, device='cuda')
         batch_indices = batch_indices.repeat((pixel_indices.shape[-1], 1)).permute((1, 0))
+
+        batch_indices = torch.flatten(batch_indices, start_dim=0, end_dim=1)
+        pixel_indices = torch.flatten(pixel_indices, start_dim=0, end_dim=1)
+        event_wise_features = torch.flatten(event_wise_features, start_dim=0, end_dim=1)
+        mask = torch.flatten(mask, start_dim=0, end_dim=1)
+
+        # print("Go")
         # print(batch_indices.shape)
-        pixel_feature_view[batch_indices, pixel_indices] += event_wise_features * mask
+        # print(pixel_indices.shape)
+        # print(event_wise_features.shape)
+        # print(mask.shape)
+        # print(batch_indices.cpu())
+
+        # print(batch_indices.shape)
+        pixel_feature_view[batch_indices, pixel_indices, :] += event_wise_features * mask
         pixel_features = pixel_features.permute((0, 3, 1, 2))
         # pixel_features = self.convolutions(pixel_features)
 
+        # print(pixel_features.shape)
+
         classification = self.classifier(pixel_features)
+
+        # print(classification.shape)
         return classification
 
     def unfreeze_resnet(self):
@@ -164,25 +181,28 @@ def validate_nn(tixel_net, dataloader, writer, epoch):
         time_data = torch.unsqueeze(time_data, dim=-1)
         polarity_data = torch.unsqueeze(polarity_data, dim=-1)
         px_indices = px_indices.type(torch.int64)
-        # print(px_indices.shape)
         mask = torch.unsqueeze(mask, dim=-1)
+
+        # print(time_data.shape)
+        # print(polarity_data.shape)
+        # print(px_indices.shape)
+        # print(mask.shape)
 
         with torch.no_grad():
             out_field = tixel_net(time_data.cuda(), polarity_data.cuda(), px_indices.cuda(), mask.cuda())
-            result = torch.mean(out_field, dim=0)
-            error, acc = cross_entropy_loss_and_accuracy(result.unsqueeze(0), class_ids[0].unsqueeze(-1).cuda())
-            s_error, s_acc = cross_entropy_loss_and_accuracy(out_field[0, :].unsqueeze(0),
-                                                             class_ids[0].unsqueeze(-1).cuda())
+            # print("")
+            # print("PR: {}".format(torch.argmax(out_field, dim=-1).cpu()))
+            # print(out_field)
+            # print("GT: {}".format(class_ids))
+            error, acc = cross_entropy_loss_and_accuracy(out_field, class_ids.cuda())
 
         epoch_loss += error.item()
         epoch_accuracy += acc.item()
 
-        single_loss += s_error.item()
-        single_acc += s_acc.item()
         num_batches += 1
 
-    print("Validation Loss: {} | Accuracy: {}".format(epoch_loss / num_batches, epoch_accuracy / num_batches))
-    print("Validation Single Loss: {} | Accuracy: {}".format(single_loss / num_batches, single_acc / num_batches))
+    print("Validation Total Loss: {} | Accuracy: {}".format(epoch_loss / num_batches, epoch_accuracy / num_batches))
+    print("Validation Single Shot Loss: {} | Accuracy: {}".format(single_loss / num_batches, single_acc / num_batches))
     writer.add_scalar("validation/accuracy", epoch_accuracy / num_batches, epoch)
     writer.add_scalar("validation/loss", epoch_loss / num_batches, epoch)
 
@@ -206,14 +226,33 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
     writer = SummaryWriter(os.path.join(log_dir, "tb"))
 
     import event_data_tixel
-    event_video = event_data_tixel.EventDataTixels(resolution, train_path, "", shuffle=True, load_ram=load_ram)
+    event_video = event_data_tixel.EventDataTixels(resolution, train_path, "", shuffle=True, load_ram=load_ram,
+                                                   time_frame=0.3, augmentation=True)
     dataloader = DataLoader(event_video, batch_size=batch_size, num_workers=num_workers, shuffle=True)
 
-    val_video = event_data_tixel.EventDataTixels(resolution, val_path, "", shuffle=False, load_ram=load_ram)
-    dataloader_val = DataLoader(val_video, batch_size=5, num_workers=num_workers, shuffle=False)
+    val_video = event_data_tixel.EventDataTixels(resolution, val_path, "", shuffle=False, load_ram=load_ram,
+                                                 time_frame=0.3)
+    dataloader_val = DataLoader(val_video, batch_size=batch_size, num_workers=num_workers, shuffle=False)
 
-    tixel_net = TixelNet(positional_exponentials=[0, 1, 2, 3, 4],
-                         num_hidden_time_features=8,
+    # for _ in tqdm.tqdm(dataloader_val):
+    #     ...
+
+    # print(val_video.times)
+    # for _ in tqdm.tqdm(dataloader):
+    #     ...
+
+    # print(event_video.times)
+    # plt.hist(event_video.times)
+    # plt.show()
+    # plt.hist(val_video.times)
+    # plt.show()
+    # plt.hist(event_video.num_events)
+    # plt.show()
+    # plt.hist(val_video.num_events)
+    # plt.show()
+
+    tixel_net = TixelNet(positional_exponentials=[2, 4, 6, 8],
+                         num_hidden_time_features=16,
                          image_resolution=resolution,
                          out_time_resolution=16,
                          num_classes=101)
@@ -224,7 +263,7 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
 
     epochs = 1000
 
-    unfreeze_epoch = 1
+    unfreeze_epoch = 0
 
     optim = torch.optim.Adam(lr=init_lr, params=tixel_net.parameters())
 
@@ -232,6 +271,9 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
 
     for epoch in range(epochs):
         print("Begin epoch {}".format(epoch))
+
+        if epoch == unfreeze_epoch:
+            tixel_net_original.unfreeze_resnet()
 
         epoch_loss = 0.0
         epoch_accuracy = 0.0
@@ -258,6 +300,10 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
 
             error, acc = cross_entropy_loss_and_accuracy(out_field, class_ids.cuda())
 
+            # print("")
+            # print("PR: {}".format(torch.argmax(out_field, dim=-1).cpu()))
+            # print("GT: {}".format(class_ids))
+
             error.backward()
 
             epoch_loss += error.item()
@@ -279,9 +325,6 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
         validate_nn(tixel_net, dataloader_val, writer, epoch)
 
         scheduler.step()
-
-        if epoch == unfreeze_epoch:
-            tixel_net_original.unfreeze_resnet()
 
 
 if __name__ == '__main__':
