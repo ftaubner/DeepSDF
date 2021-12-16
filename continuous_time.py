@@ -231,8 +231,8 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
     dataloader = DataLoader(event_video, batch_size=batch_size, num_workers=num_workers, shuffle=True)
 
     val_video = event_data_tixel.EventDataTixels(resolution, val_path, "", shuffle=False, load_ram=load_ram,
-                                                 time_frame=0.3)
-    dataloader_val = DataLoader(val_video, batch_size=batch_size, num_workers=num_workers, shuffle=False)
+                                                 time_frame=0.3, classes=event_video.classes)
+    dataloader_val = DataLoader(val_video, batch_size=batch_size, num_workers=num_workers, shuffle=True)
 
     # for _ in tqdm.tqdm(dataloader_val):
     #     ...

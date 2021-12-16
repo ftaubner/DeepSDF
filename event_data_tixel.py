@@ -34,8 +34,12 @@ class EventDataTixels(Dataset):
         # with open(os.path.join(path_to_fields, "dataset_info.json"), "r") as f:
         #     self.dataset_info = json.load(f)
         self.max_num_events = max_num_events
-        self.event_path_list, self.field_path_list, self.class_names, self.classes = \
+        self.event_path_list, self.field_path_list, self.class_names, new_classes = \
             self.get_paths_and_classes(path_to_events, path_to_fields)
+        if classes is not None:
+            self.classes = classes
+        else:
+            self.classes = new_classes
         self.length = len(self.event_path_list)
         # if not shuffle:
         #     self.length = self.length * 5
