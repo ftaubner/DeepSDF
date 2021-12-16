@@ -325,7 +325,7 @@ def process_dataset_fields(dataset_path, processed_path, render=False):
     mean_im_x_s = []
     std_im_x_s = []
     num_s = []
-    tixel = 0.006
+    tixel = 0.3 / 20
 
     for class_dir in os.listdir(dataset_path):
         for file_name in os.listdir(os.path.join(dataset_path, class_dir)):
