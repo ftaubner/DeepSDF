@@ -103,7 +103,7 @@ class Classifier(nn.Module):
     def __init__(self, num_in_features, num_classes, crop_dimensions=(224, 224)):
         super().__init__()
 
-        self.classifier = resnet34(pretrained=True)
+        self.classifier = resnet34(pretrained=False)
         self.crop_dimensions = crop_dimensions
 
         for child in self.classifier.children():
@@ -179,11 +179,12 @@ def validate_nn(tixel_net, dataloader, writer, epoch):
 
     tixel_net.eval()
 
-    for time_data, polarity_data, px_indices, mask, gt_field, class_ids, idx in tqdm.tqdm(dataloader):
-        time_data = torch.unsqueeze(time_data, dim=-1)
-        polarity_data = torch.unsqueeze(polarity_data, dim=-1)
-        px_indices = px_indices.type(torch.int64)
-        mask = torch.unsqueeze(mask, dim=-1)
+    # for time_data, polarity_data, px_indices, mask, gt_field, class_ids, idx in tqdm.tqdm(dataloader):
+    for field, class_ids, idx in tqdm.tqdm(dataloader):
+        # time_data = torch.unsqueeze(time_data, dim=-1)
+        # polarity_data = torch.unsqueeze(polarity_data, dim=-1)
+        # px_indices = px_indices.type(torch.int64)
+        # mask = torch.unsqueeze(mask, dim=-1)
 
         # print(time_data.shape)
         # print(polarity_data.shape)
@@ -191,7 +192,8 @@ def validate_nn(tixel_net, dataloader, writer, epoch):
         # print(mask.shape)
 
         with torch.no_grad():
-            out_field = tixel_net(time_data.cuda(), polarity_data.cuda(), px_indices.cuda(), mask.cuda())
+            # out_field = tixel_net(time_data.cuda(), polarity_data.cuda(), px_indices.cuda(), mask.cuda())
+            out_field = tixel_net(field)
             # print("")
             # print("PR: {}".format(torch.argmax(out_field, dim=-1).cpu()))
             # print(out_field)
@@ -228,36 +230,24 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
     writer = SummaryWriter(os.path.join(log_dir, "tb"))
 
     import event_data_tixel
-    event_video = event_data_tixel.EventDataTixels(resolution, train_path, "", shuffle=True, load_ram=load_ram,
-                                                   time_frame=0.3, augmentation=True)
+    # event_video = event_data_tixel.EventDataTixels(resolution, train_path, "", shuffle=True, load_ram=load_ram,
+    #                                                time_frame=0.3, augmentation=True)
+    event_video = event_data_tixel.EventDataFields(resolution, train_path, "", num_frames=20, augmentation=True,
+                                                   load_ram=load_ram)
     dataloader = DataLoader(event_video, batch_size=batch_size, num_workers=num_workers, shuffle=True)
 
-    val_video = event_data_tixel.EventDataTixels(resolution, val_path, "", shuffle=False, load_ram=load_ram,
-                                                 time_frame=0.3, classes=event_video.classes)
+    # val_video = event_data_tixel.EventDataTixels(resolution, val_path, "", shuffle=False, load_ram=load_ram,
+    #                                              time_frame=0.3, classes=event_video.classes)
+    val_video = event_data_tixel.EventDataFields(resolution, val_path, "", num_frames=20, classes=event_video.classes,
+                                                 load_ram=load_ram)
     dataloader_val = DataLoader(val_video, batch_size=batch_size, num_workers=num_workers, shuffle=False)
 
-    # for _ in tqdm.tqdm(dataloader_val):
-    #     ...
-
-    # print(val_video.times)
-    # for _ in tqdm.tqdm(dataloader):
-    #     ...
-
-    # print(event_video.times)
-    # plt.hist(event_video.times)
-    # plt.show()
-    # plt.hist(val_video.times)
-    # plt.show()
-    # plt.hist(event_video.num_events)
-    # plt.show()
-    # plt.hist(val_video.num_events)
-    # plt.show()
-
-    tixel_net = TixelNet(positional_exponentials=[2, 4, 6, 8],
-                         num_hidden_time_features=16,
-                         image_resolution=resolution,
-                         out_time_resolution=16,
-                         num_classes=101)
+    # tixel_net = TixelNet(positional_exponentials=[2, 4, 6, 8],
+    #                      num_hidden_time_features=16,
+    #                      image_resolution=resolution,
+    #                      out_time_resolution=16,
+    #                      num_classes=101)
+    tixel_net = Classifier(20, 101)
     tixel_net.cuda()
     tixel_net_original = tixel_net
     tixel_net = torch.nn.DataParallel(tixel_net)
@@ -284,22 +274,24 @@ def train_tixel(train_path, val_path, batch_size=10, log_dir="logs", init_lr=1e-
         # validate_nn(tixel_net, dataloader_val, writer, epoch)
         tixel_net.train()
 
-        for time_data, polarity_data, px_indices, mask, gt_field, class_ids, idx in tqdm.tqdm(dataloader):
+        # for time_data, polarity_data, px_indices, mask, gt_field, class_ids, idx in tqdm.tqdm(dataloader):
+        for field, class_ids, idx in tqdm.tqdm(dataloader):
             optim.zero_grad()
 
-            time_data = torch.unsqueeze(time_data, dim=-1)
-            polarity_data = torch.unsqueeze(polarity_data, dim=-1)
-            px_indices = px_indices.type(torch.int64)
-            mask = torch.unsqueeze(mask, dim=-1)
+            # time_data = torch.unsqueeze(time_data, dim=-1)
+            # polarity_data = torch.unsqueeze(polarity_data, dim=-1)
+            # px_indices = px_indices.type(torch.int64)
+            # mask = torch.unsqueeze(mask, dim=-1)
 
-            time_data.requires_grad = False
-            polarity_data.requires_grad = False
-            px_indices.requires_grad = False
-            mask.requires_grad = False
+            # time_data.requires_grad = False
+            # polarity_data.requires_grad = False
+            # px_indices.requires_grad = False
+            # mask.requires_grad = False
             # px_indices = torch.unsqueeze(px_indices, dim=-1)
 
-            out_field = tixel_net(time_data.cuda(), polarity_data.cuda(), px_indices.cuda(), mask.cuda())
-            # error = torch.mean((out_field - gt_field.permute((0, 3, 1, 2)).cuda()) ** 2)
+            # out_field = tixel_net(time_data.cuda(), polarity_data.cuda(), px_indices.cuda(), mask.cuda())
+            field.requires_grad = False
+            out_field = tixel_net(field)
 
             error, acc = cross_entropy_loss_and_accuracy(out_field, class_ids.cuda())
 

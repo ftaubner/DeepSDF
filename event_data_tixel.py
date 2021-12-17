@@ -148,3 +148,90 @@ class EventDataTixels(Dataset):
             indices = np.pad(indices, (0, self.max_num_events - event_data.shape[0]))
 
         return time_data, polarity_data, indices, mask, 0, class_id, idx
+
+
+class EventDataFields(Dataset):
+    def __init__(self, resolution, path_to_events, path_to_fields,
+                 num_frames=20, load_ram=False,
+                 classes=None, augmentation=False):
+        self.resolution = resolution
+        self.num_frames = num_frames
+        with open(os.path.join(path_to_events, "dataset_info.json"), "r") as f:
+            self.dataset_info = json.load(f)
+
+        self.event_path_list, self.field_path_list, self.class_names, new_classes = \
+            self.get_paths_and_classes(path_to_events, path_to_fields)
+
+        if classes is not None:
+            self.classes = classes
+        else:
+            self.classes = new_classes
+        self.length = len(self.event_path_list)
+        # if not shuffle:
+        #     self.length = self.length * 5
+        self.augmentation = augmentation
+        self.times = []
+        self.num_events = []
+
+        self.load_ram = load_ram
+        if load_ram:
+            self.ram_event_list = self.load_to_ram(self.event_path_list)
+
+        print("Done loading dataset from {}".format(path_to_events))
+
+    def get_paths_and_classes(self, events_path, fields_path):
+        event_path_list = []
+        fields_path_list = []
+        class_names = []
+        classes = []
+        for class_dir in os.listdir(events_path):
+            if os.path.isdir(os.path.join(events_path, class_dir)):
+                classes.append(class_dir)
+                for file_name in os.listdir(os.path.join(events_path, class_dir)):
+                    event_path_list.append(os.path.join(events_path, class_dir, file_name))
+                    class_names.append(class_dir)
+
+        return event_path_list, fields_path_list, class_names, classes
+
+    def load_to_ram(self, event_path_list):
+        return [np.load(path).astype(np.float32) for path in event_path_list]
+
+    def __len__(self):
+        return self.length
+
+    def random_flip_events(self, events, p=0.5):
+        """flips the events on x-axis"""
+        if np.random.random() < p:
+            events = np.flip(events, axis=0)
+        return events
+
+    def __getitem__(self, idx):
+        if idx > self.length:
+            raise IndexError
+
+        class_name = self.class_names[idx]
+        class_id = self.classes.index(class_name)
+
+        if self.load_ram:
+            event_data = self.ram_event_list[idx]
+        else:
+            path_to_event_file = self.event_path_list[idx]
+            event_data = np.load(path_to_event_file)
+            event_data = np.array(event_data, dtype=np.single)
+
+        event_data = (event_data - self.dataset_info["mean_f"]) / self.dataset_info["std_f"]
+
+        if self.augmentation:
+            # event_data = random_shift_events(event_data)
+            event_data = random_flip_events_along_x(event_data)
+
+        event_data = np.transpose(event_data, axes=(2, 1, 0))
+        out_data = np.zeros([self.num_frames, self.resolution[0], self.resolution[1]], dtype=np.single)
+        out_data[:min(self.num_frames, event_data.shape[0]),
+                 :min(self.num_frames, event_data.shape[1]),
+                 :min(self.resolution[1], event_data.shape[2])] = \
+            event_data[:min(self.num_frames, event_data.shape[0]),
+                       :min(self.num_frames, event_data.shape[1]),
+                       :min(self.resolution[1], event_data.shape[2])]
+
+        return out_data, class_id, idx
